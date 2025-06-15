@@ -28,29 +28,60 @@ export default function ChatApp() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const responsesContainerRef = useRef<HTMLDivElement>(null);
 
-  // Initialize app
-  useEffect(() => {
-    const loadInitialChat = () => {
-      try {
-        const savedChats = localStorage.getItem('chatHistory');
-        if (savedChats) {
-          const chats: ChatHistory[] = JSON.parse(savedChats);
-          if (chats.length > 0) {
-            const mostRecentChat = chats.sort(
-              (a, b) => b.createdAt - a.createdAt,
-            )[0];
-            setMessages(mostRecentChat.messages);
-            setCurrentChatId(mostRecentChat.id);
-            return;
-          }
-        }
-        createNewChat();
-      } catch (error) {
-        console.error('Failed to load chat history:', error);
-        createNewChat();
-      }
+  // createNewChat을 useCallback으로 메모화
+  const createNewChat = useCallback(() => {
+    const newChatId = Date.now().toString();
+    const newChat: ChatHistory = {
+      id: newChatId,
+      title: 'New Chat',
+      messages: [{ role: 'system', content: 'You are a helpful assistant.' }],
+      createdAt: Date.now(),
     };
 
+    let currentHistory: ChatHistory[] = [];
+    try {
+      const saved = localStorage.getItem('chatHistory');
+      if (saved) currentHistory = JSON.parse(saved);
+    } catch (error) {
+      console.error('Error parsing chat history:', error);
+    }
+
+    const updatedHistory = [newChat, ...currentHistory];
+    localStorage.setItem('chatHistory', JSON.stringify(updatedHistory));
+
+    setMessages(newChat.messages);
+    setCurrentChatId(newChatId);
+    window.dispatchEvent(new Event('storageChange'));
+
+    if (window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
+  }, [setMessages, setCurrentChatId, setIsSidebarOpen]);
+
+  // loadInitialChat을 useCallback으로 메모화
+  const loadInitialChat = useCallback(() => {
+    try {
+      const savedChats = localStorage.getItem('chatHistory');
+      if (savedChats) {
+        const chats: ChatHistory[] = JSON.parse(savedChats);
+        if (chats.length > 0) {
+          const mostRecentChat = chats.sort(
+            (a, b) => b.createdAt - a.createdAt,
+          )[0];
+          setMessages(mostRecentChat.messages);
+          setCurrentChatId(mostRecentChat.id);
+          return;
+        }
+      }
+      createNewChat();
+    } catch (error) {
+      console.error('Failed to load chat history:', error);
+      createNewChat();
+    }
+  }, [setMessages, setCurrentChatId, createNewChat]);
+
+  // Initialize app - 의존성 배열 수정
+  useEffect(() => {
     loadInitialChat();
     loadChatHistory();
 
@@ -62,7 +93,7 @@ export default function ChatApp() {
         eventSourceRef.current = null;
       }
     };
-  }, []);
+  }, [loadInitialChat, loadChatHistory]);
 
   // Auto-scroll
   const scrollToBottom = useCallback(() => {
@@ -127,182 +158,172 @@ export default function ChatApp() {
     }
   }, [needsTitle, messages, isLoading, generateChatTitle]);
 
-  const createNewChat = () => {
-    const newChatId = Date.now().toString();
-    const newChat: ChatHistory = {
-      id: newChatId,
-      title: 'New Chat',
-      messages: [{ role: 'system', content: 'You are a helpful assistant.' }],
-      createdAt: Date.now(),
-    };
-
-    let currentHistory: ChatHistory[] = [];
-    try {
-      const saved = localStorage.getItem('chatHistory');
-      if (saved) currentHistory = JSON.parse(saved);
-    } catch (error) {
-      console.error('Error parsing chat history:', error);
-    }
-
-    const updatedHistory = [newChat, ...currentHistory];
-    localStorage.setItem('chatHistory', JSON.stringify(updatedHistory));
-
-    setMessages(newChat.messages);
-    setCurrentChatId(newChatId);
-    window.dispatchEvent(new Event('storageChange'));
-
-    if (window.innerWidth < 768) {
-      setIsSidebarOpen(false);
-    }
-  };
-
-  const deleteChat = (e: React.MouseEvent, chatId: string) => {
-    e.stopPropagation();
-
-    let currentHistory: ChatHistory[] = [];
-    try {
-      const saved = localStorage.getItem('chatHistory');
-      if (saved) currentHistory = JSON.parse(saved);
-    } catch (error) {
-      console.error('Error parsing chat history:', error);
-    }
-
-    const updatedHistory = currentHistory.filter((chat) => chat.id !== chatId);
-    localStorage.setItem('chatHistory', JSON.stringify(updatedHistory));
-
-    useChatStore.getState().setChatHistory(updatedHistory);
-
-    if (chatId === currentChatId) {
-      if (updatedHistory.length > 0) {
-        selectChat(updatedHistory[0]);
-      } else {
-        createNewChat();
+  const selectChat = useCallback(
+    (chat: ChatHistory) => {
+      setMessages(chat.messages);
+      setCurrentChatId(chat.id);
+      if (window.innerWidth < 768) {
+        setIsSidebarOpen(false);
       }
-    }
+    },
+    [setMessages, setCurrentChatId, setIsSidebarOpen],
+  );
+  const deleteChat = useCallback(
+    (e: React.MouseEvent, chatId: string) => {
+      e.stopPropagation();
 
-    window.dispatchEvent(new Event('storageChange'));
-  };
-
-  const selectChat = (chat: ChatHistory) => {
-    setMessages(chat.messages);
-    setCurrentChatId(chat.id);
-    if (window.innerWidth < 768) {
-      setIsSidebarOpen(false);
-    }
-  };
-
-  const handleSubmit = async (userMessage: string) => {
-    if (isLoading) return;
-
-    const updatedMessages = [
-      ...messages,
-      { role: 'user' as const, content: userMessage },
-    ];
-    setMessages(updatedMessages);
-    addMessage({ role: 'assistant', content: '', isStreaming: true });
-
-    setIsLoading(true);
-    setIsAutoScroll(true);
-
-    if (messages.length === 1 && messages[0].role === 'system') {
-      setNeedsTitle(true);
-    }
-
-    saveCurrentChat();
-
-    try {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
+      let currentHistory: ChatHistory[] = [];
+      try {
+        const saved = localStorage.getItem('chatHistory');
+        if (saved) currentHistory = JSON.parse(saved);
+      } catch (error) {
+        console.error('Error parsing chat history:', error);
       }
 
-      const chatController = new AbortController();
-      const signal = chatController.signal;
+      const updatedHistory = currentHistory.filter(
+        (chat) => chat.id !== chatId,
+      );
+      localStorage.setItem('chatHistory', JSON.stringify(updatedHistory));
 
-      const response = await fetch('http://localhost:8000/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream',
-        },
-        body: JSON.stringify({
-          messages: updatedMessages.map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-          })),
-        }),
-        signal: signal,
-      });
+      useChatStore.getState().setChatHistory(updatedHistory);
 
-      if (!response.ok || !response.body) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (chatId === currentChatId) {
+        if (updatedHistory.length > 0) {
+          selectChat(updatedHistory[0]);
+        } else {
+          createNewChat();
+        }
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let accumulatedContent = '';
+      window.dispatchEvent(new Event('storageChange'));
+    },
+    [currentChatId, createNewChat, selectChat],
+  );
+  const handleSubmit = useCallback(
+    async (userMessage: string) => {
+      if (isLoading) return;
 
-      const readStream = async () => {
-        while (true) {
-          const { done, value } = await reader.read();
+      const updatedMessages = [
+        ...messages,
+        { role: 'user' as const, content: userMessage },
+      ];
+      setMessages(updatedMessages);
+      addMessage({ role: 'assistant', content: '', isStreaming: true });
 
-          if (done) {
-            setIsLoading(false);
-            updateLastMessage(accumulatedContent, false);
-            saveCurrentChat();
-            break;
-          }
+      setIsLoading(true);
+      setIsAutoScroll(true);
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n\n');
-          buffer = lines.pop() || '';
+      if (messages.length === 1 && messages[0].role === 'system') {
+        setNeedsTitle(true);
+      }
 
-          for (const line of lines) {
-            if (line.startsWith('data:')) {
-              try {
-                const jsonStr = line.slice(5).trim();
-                const parsedData = JSON.parse(jsonStr) as QueryResponse;
+      saveCurrentChat();
 
-                if (parsedData.data === 'Stream finished') {
-                  setIsLoading(false);
-                  updateLastMessage(accumulatedContent, false);
-                  saveCurrentChat();
-                } else {
-                  accumulatedContent += parsedData.data;
-                  updateLastMessage(accumulatedContent, true);
+      try {
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+        }
+
+        const chatController = new AbortController();
+        const signal = chatController.signal;
+
+        const response = await fetch('http://localhost:8000/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream',
+          },
+          body: JSON.stringify({
+            messages: updatedMessages.map((msg) => ({
+              role: msg.role,
+              content: msg.content,
+            })),
+          }),
+          signal: signal,
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let accumulatedContent = '';
+
+        const readStream = async () => {
+          while (true) {
+            const { done, value } = await reader.read();
+
+            if (done) {
+              setIsLoading(false);
+              updateLastMessage(accumulatedContent, false);
+              saveCurrentChat();
+              break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              if (line.startsWith('data:')) {
+                try {
+                  const jsonStr = line.slice(5).trim();
+                  const parsedData = JSON.parse(jsonStr) as QueryResponse;
+
+                  if (parsedData.data === 'Stream finished') {
+                    setIsLoading(false);
+                    updateLastMessage(accumulatedContent, false);
+                    saveCurrentChat();
+                  } else {
+                    accumulatedContent += parsedData.data;
+                    updateLastMessage(accumulatedContent, true);
+                  }
+                } catch (e) {
+                  console.error('Error parsing SSE data:', e);
                 }
-              } catch (e) {
-                console.error('Error parsing SSE data:', e);
               }
             }
           }
-        }
-      };
+        };
 
-      readStream().catch((error) => {
-        console.error('Stream reading error:', error);
+        readStream().catch((error) => {
+          console.error('Stream reading error:', error);
+          setIsLoading(false);
+          updateLastMessage(
+            accumulatedContent + '\n[Error: Connection failed]',
+            false,
+          );
+          saveCurrentChat();
+        });
+
+        eventSourceRef.current = {
+          close: () => {
+            chatController.abort();
+          },
+        } as unknown as EventSource;
+      } catch (error) {
+        console.error('Failed to start chat:', error);
         setIsLoading(false);
-        updateLastMessage(
-          accumulatedContent + '\n[Error: Connection failed]',
-          false,
-        );
+        updateLastMessage('\n[Error: Connection failed]', false);
         saveCurrentChat();
-      });
+      }
+    },
+    [
+      isLoading,
+      messages,
+      setMessages,
+      addMessage,
+      setIsLoading,
+      setIsAutoScroll,
+      setNeedsTitle,
+      saveCurrentChat,
+      updateLastMessage,
+    ],
+  );
 
-      eventSourceRef.current = {
-        close: () => {
-          chatController.abort();
-        },
-      } as unknown as EventSource;
-    } catch (error) {
-      console.error('Failed to start chat:', error);
-      setIsLoading(false);
-      updateLastMessage('\n[Error: Connection failed]', false);
-      saveCurrentChat();
-    }
-  };
-
-  const handleStop = () => {
+  const handleStop = useCallback(() => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -314,10 +335,12 @@ export default function ChatApp() {
         saveCurrentChat();
       }
     }
-  };
+  }, [messages, setIsLoading, updateLastMessage, saveCurrentChat]);
 
-  const getVisibleMessages = () =>
-    messages.filter((msg) => msg.role !== 'system');
+  const getVisibleMessages = useCallback(
+    () => messages.filter((msg) => msg.role !== 'system'),
+    [messages],
+  );
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
