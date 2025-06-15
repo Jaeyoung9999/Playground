@@ -370,7 +370,7 @@ export default function ChatApp() {
           ) : (
             <div className="max-w-4xl mx-auto">
               {getVisibleMessages().map((message, index) => (
-                <ChatMessage key={index} message={message} index={index} />
+                <ChatMessage key={index} message={message} />
               ))}
             </div>
           )}

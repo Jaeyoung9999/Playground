@@ -7,10 +7,9 @@ import type { Message } from '@/types/types';
 
 type ChatMessageProps = {
   message: Message;
-  index: number;
 };
 
-export default function ChatMessage({ message, index }: ChatMessageProps) {
+export default function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user';
 
   return (
@@ -27,22 +26,23 @@ export default function ChatMessage({ message, index }: ChatMessageProps) {
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
-                code({ node, inline, className, children, ...props }) {
+                code({ node, className, children, ...props }) {
                   const match = /language-(\w+)/.exec(className || '');
-                  return !inline && match ? (
+                  const isInline =
+                    !match &&
+                    node?.tagName === 'code' &&
+                    !node?.position?.start?.line;
+
+                  return !isInline && match ? (
                     <SyntaxHighlighter
                       style={vscDarkPlus}
                       language={match[1]}
                       PreTag="div"
-                      className="rounded-md my-2"
                     >
                       {String(children).replace(/\n$/, '')}
                     </SyntaxHighlighter>
                   ) : (
-                    <code
-                      className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-sm"
-                      {...props}
-                    >
+                    <code className={className} {...props}>
                       {children}
                     </code>
                   );
