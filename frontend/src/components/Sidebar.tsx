@@ -1,5 +1,5 @@
 // components/Sidebar.tsx
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { useChatStore } from '@/stores/store';
 import type { ChatHistory } from '@/types/types';
 
@@ -51,40 +51,34 @@ export default function Sidebar({
     });
   };
 
-  // 이 함수는 복잡하고 localStorage 작업을 포함하므로 useCallback 적용
-  const saveEditedTitle = useCallback(
-    (chatId: string) => {
-      if (!editedTitle.trim()) return;
+  const saveEditedTitle = (chatId: string) => {
+    if (!editedTitle.trim()) return;
 
-      try {
-        let currentHistory: ChatHistory[] = [];
-        const saved = localStorage.getItem('chatHistory');
-        if (saved) {
-          currentHistory = JSON.parse(saved);
-        }
-
-        const chatIndex = currentHistory.findIndex(
-          (chat) => chat.id === chatId,
-        );
-        if (chatIndex !== -1) {
-          currentHistory[chatIndex].title = editedTitle.trim();
-          localStorage.setItem('chatHistory', JSON.stringify(currentHistory));
-          useChatStore.getState().setChatHistory(currentHistory);
-
-          if (chatId === currentChatId) {
-            useChatStore.getState().saveCurrentChat(editedTitle.trim());
-          }
-
-          window.dispatchEvent(new Event('storageChange'));
-        }
-      } catch (error) {
-        console.error('Failed to save edited title:', error);
+    try {
+      let currentHistory: ChatHistory[] = [];
+      const saved = localStorage.getItem('chatHistory');
+      if (saved) {
+        currentHistory = JSON.parse(saved);
       }
 
-      setEditingChatId(null);
-    },
-    [editedTitle, currentChatId],
-  );
+      const chatIndex = currentHistory.findIndex((chat) => chat.id === chatId);
+      if (chatIndex !== -1) {
+        currentHistory[chatIndex].title = editedTitle.trim();
+        localStorage.setItem('chatHistory', JSON.stringify(currentHistory));
+        useChatStore.getState().setChatHistory(currentHistory);
+
+        if (chatId === currentChatId) {
+          useChatStore.getState().saveCurrentChat(editedTitle.trim());
+        }
+
+        window.dispatchEvent(new Event('storageChange'));
+      }
+    } catch (error) {
+      console.error('Failed to save edited title:', error);
+    }
+
+    setEditingChatId(null);
+  };
 
   return (
     <>

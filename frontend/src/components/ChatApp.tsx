@@ -28,7 +28,7 @@ export default function ChatApp() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const responsesContainerRef = useRef<HTMLDivElement>(null);
 
-  // createNewChat을 useCallback으로 메모화
+  // Sidebar props로 전달되는 함수들만 useCallback 사용
   const createNewChat = useCallback(() => {
     const newChatId = Date.now().toString();
     const newChat: ChatHistory = {
@@ -56,107 +56,7 @@ export default function ChatApp() {
     if (window.innerWidth < 768) {
       setIsSidebarOpen(false);
     }
-  }, [setMessages, setCurrentChatId, setIsSidebarOpen]);
-
-  // loadInitialChat을 useCallback으로 메모화
-  const loadInitialChat = useCallback(() => {
-    try {
-      const savedChats = localStorage.getItem('chatHistory');
-      if (savedChats) {
-        const chats: ChatHistory[] = JSON.parse(savedChats);
-        if (chats.length > 0) {
-          const mostRecentChat = chats.sort(
-            (a, b) => b.createdAt - a.createdAt,
-          )[0];
-          setMessages(mostRecentChat.messages);
-          setCurrentChatId(mostRecentChat.id);
-          return;
-        }
-      }
-      createNewChat();
-    } catch (error) {
-      console.error('Failed to load chat history:', error);
-      createNewChat();
-    }
-  }, [setMessages, setCurrentChatId, createNewChat]);
-
-  // Initialize app - 의존성 배열 수정
-  useEffect(() => {
-    loadInitialChat();
-    loadChatHistory();
-
-    window.addEventListener('storageChange', loadChatHistory);
-    return () => {
-      window.removeEventListener('storageChange', loadChatHistory);
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-    };
-  }, [loadInitialChat, loadChatHistory]);
-
-  // Auto-scroll
-  const scrollToBottom = useCallback(() => {
-    if (isAutoScroll) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [isAutoScroll]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
-
-  const handleScroll = () => {
-    if (responsesContainerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } =
-        responsesContainerRef.current;
-      const isAtBottom = scrollHeight - scrollTop - clientHeight < 20;
-      setIsAutoScroll(isAtBottom);
-    }
-  };
-
-  // Title generation
-  const generateChatTitle = useCallback(
-    async (userMsg: string, aiResponse: string) => {
-      try {
-        const response = await fetch('http://localhost:8000/generate-title', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userMessage: userMsg,
-            aiResponse: aiResponse,
-          }),
-        });
-
-        if (!response.ok)
-          throw new Error(`HTTP error! status: ${response.status}`);
-
-        const data = await response.json();
-        if (data.title) {
-          saveCurrentChat(data.title);
-        }
-      } catch (error) {
-        console.error('Failed to generate title:', error);
-        const fallbackTitle =
-          userMsg.length > 30 ? `${userMsg.substring(0, 30)}...` : userMsg;
-        saveCurrentChat(fallbackTitle);
-      }
-      setNeedsTitle(false);
-    },
-    [saveCurrentChat, setNeedsTitle],
-  );
-
-  useEffect(() => {
-    if (needsTitle && messages.length >= 3 && !isLoading) {
-      const userMsg =
-        messages.find((msg) => msg.role === 'user')?.content || '';
-      const aiMsg =
-        messages.find((msg) => msg.role === 'assistant')?.content || '';
-      if (userMsg && aiMsg) {
-        generateChatTitle(userMsg, aiMsg);
-      }
-    }
-  }, [needsTitle, messages, isLoading, generateChatTitle]);
+  }, [setMessages, setCurrentChatId]);
 
   const selectChat = useCallback(
     (chat: ChatHistory) => {
@@ -166,8 +66,9 @@ export default function ChatApp() {
         setIsSidebarOpen(false);
       }
     },
-    [setMessages, setCurrentChatId, setIsSidebarOpen],
+    [setMessages, setCurrentChatId],
   );
+
   const deleteChat = useCallback(
     (e: React.MouseEvent, chatId: string) => {
       e.stopPropagation();
@@ -199,6 +100,8 @@ export default function ChatApp() {
     },
     [currentChatId, createNewChat, selectChat],
   );
+
+  // ChatInput props로 전달되는 함수들만 useCallback 사용
   const handleSubmit = useCallback(
     async (userMessage: string) => {
       if (isLoading) return;
@@ -337,10 +240,108 @@ export default function ChatApp() {
     }
   }, [messages, setIsLoading, updateLastMessage, saveCurrentChat]);
 
-  const getVisibleMessages = useCallback(
-    () => messages.filter((msg) => msg.role !== 'system'),
-    [messages],
-  );
+  // useEffect 내부에서만 사용되는 함수들은 일반 함수로 변경
+  const loadInitialChat = () => {
+    try {
+      const savedChats = localStorage.getItem('chatHistory');
+      if (savedChats) {
+        const chats: ChatHistory[] = JSON.parse(savedChats);
+        if (chats.length > 0) {
+          const mostRecentChat = chats.sort(
+            (a, b) => b.createdAt - a.createdAt,
+          )[0];
+          setMessages(mostRecentChat.messages);
+          setCurrentChatId(mostRecentChat.id);
+          return;
+        }
+      }
+      createNewChat();
+    } catch (error) {
+      console.error('Failed to load chat history:', error);
+      createNewChat();
+    }
+  };
+
+  const generateChatTitle = async (userMsg: string, aiResponse: string) => {
+    try {
+      const response = await fetch('http://localhost:8000/generate-title', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userMessage: userMsg,
+          aiResponse: aiResponse,
+        }),
+      });
+
+      if (!response.ok)
+        throw new Error(`HTTP error! status: ${response.status}`);
+
+      const data = await response.json();
+      if (data.title) {
+        saveCurrentChat(data.title);
+      }
+    } catch (error) {
+      console.error('Failed to generate title:', error);
+      const fallbackTitle =
+        userMsg.length > 30 ? `${userMsg.substring(0, 30)}...` : userMsg;
+      saveCurrentChat(fallbackTitle);
+    }
+    setNeedsTitle(false);
+  };
+
+  const scrollToBottom = () => {
+    if (isAutoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  // Initialize app
+  useEffect(() => {
+    loadInitialChat();
+    loadChatHistory();
+
+    window.addEventListener('storageChange', loadChatHistory);
+    return () => {
+      window.removeEventListener('storageChange', loadChatHistory);
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-scroll
+  useEffect(() => {
+    scrollToBottom();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, isAutoScroll]);
+
+  const handleScroll = () => {
+    if (responsesContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } =
+        responsesContainerRef.current;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 20;
+      setIsAutoScroll(isAtBottom);
+    }
+  };
+
+  // Title generation
+  useEffect(() => {
+    if (needsTitle && messages.length >= 3 && !isLoading) {
+      const userMsg =
+        messages.find((msg) => msg.role === 'user')?.content || '';
+      const aiMsg =
+        messages.find((msg) => msg.role === 'assistant')?.content || '';
+      if (userMsg && aiMsg) {
+        generateChatTitle(userMsg, aiMsg);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsTitle, messages, isLoading]);
+
+  // 간단한 필터링은 렌더링 중에 직접 수행
+  const visibleMessages = messages.filter((msg) => msg.role !== 'system');
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
@@ -381,7 +382,7 @@ export default function ChatApp() {
           onScroll={handleScroll}
           className="flex-1 overflow-y-auto px-4 py-8"
         >
-          {getVisibleMessages().length === 0 ? (
+          {visibleMessages.length === 0 ? (
             <div className="max-w-4xl mx-auto text-center mt-20">
               <h1 className="text-3xl font-bold mb-4 dark:text-white">
                 Welcome to Chat
@@ -392,7 +393,7 @@ export default function ChatApp() {
             </div>
           ) : (
             <div className="max-w-4xl mx-auto">
-              {getVisibleMessages().map((message, index) => (
+              {visibleMessages.map((message, index) => (
                 <ChatMessage key={index} message={message} />
               ))}
             </div>
